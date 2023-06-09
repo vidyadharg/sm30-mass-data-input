@@ -1,5 +1,5 @@
 *&---------------------------------------------------------------------*
-*& Report ZDBTABLE_UPDN
+*& Report zsm30massimport
 *& Program to mass upload/download data in the database table.
 *&---------------------------------------------------------------------*
 REPORT zsm30massimport.
@@ -10,17 +10,15 @@ CONSTANTS :
     sflight          TYPE rsrd1-tbma_val VALUE 'SFLIGHT',
     sbook            TYPE rsrd1-tbma_val VALUE 'SBOOK',
 *    Z_TMG_table TYPE rsrd1-tbma_val VALUE 'Z_TMG_table',
-
     import_file      TYPE sscrfields-ucomm VALUE 'FC05',
     import_clipboard TYPE sscrfields-ucomm VALUE 'FC03',
     export_file      TYPE sscrfields-ucomm VALUE 'FC04',
-
   END OF gc.
 
 TYPES: BEGIN OF _text,
          line TYPE c LENGTH 1000,
        END OF _text,
-       _text_tab TYPE STANDARD TABLE OF _text WITH DEFAULT KEY.
+       _text_tab TYPE STANDARD TABLE OF _text WITH EMPTY KEY.
 
 DATA :
   doc_container TYPE REF TO cl_gui_docking_container.
@@ -42,7 +40,8 @@ SELECTION-SCREEN FUNCTION KEY 5.
 INITIALIZATION.
   PERFORM f_init.
 
-"Validate table name
+  "Validate table name
+
 AT SELECTION-SCREEN ON ptable.
   PERFORM f_validate_table.
 
@@ -53,38 +52,41 @@ AT SELECTION-SCREEN.
       CHECK ptable IS NOT INITIAL.
       PERFORM f_call_sm30.
     WHEN gc-export_file.
-      CHECK ptable IS NOT INITIAL.
-      PERFORM f_export_to_pc.
+      IF ptable IS NOT INITIAL.
+        PERFORM f_export_to_pc.
+      ENDIF.
     WHEN 'PTAB'.
-*      CHECK ptable IS NOT INITIAL.
       PERFORM f_build_container.
   ENDCASE.
 
 FORM f_init.
-  DATA : li_list    TYPE vrm_values,
-         lt_exclude TYPE TABLE OF rsexfcode.
+  TYPES tt_rsexfcode TYPE TABLE OF rsexfcode.
+  DATA:
+    li_list    TYPE vrm_values,
+    ls_functxt TYPE smp_dyntxt,
+    lt_exclude TYPE tt_rsexfcode.
 
   lt_exclude = VALUE #(
      "Execute and Print.
     ( fcode = 'PRIN' )
      "Execute.
-    ( fcode = 'ONLI' ) 
+    ( fcode = 'ONLI' )
     "Execute in Background
-    ( fcode = 'SJOB' )  
+    ( fcode = 'SJOB' )
     "Variant Delete
-    ( fcode = 'VDEL' ) 
+    ( fcode = 'VDEL' )
      "Variant Save
-    ( fcode = 'SPOS' ) 
+    ( fcode = 'SPOS' )
      "Get...
-    ( fcode = 'GET'  ) 
+    ( fcode = 'GET' )
      "Display...
-    ( fcode = 'VSHO' ) 
+    ( fcode = 'VSHO' )
     "Delete...
-    ( fcode = 'VDEL' )  
+    ( fcode = 'VDEL' )
     "Save as Variant...
-    ( fcode = 'SPOS' )  
+    ( fcode = 'SPOS' )
     "User Variables...
-    ( fcode = 'LVUV' ) ). 
+    ( fcode = 'LVUV' ) ).
 
   CALL FUNCTION 'RS_SET_SELSCREEN_STATUS'
     EXPORTING
@@ -92,23 +94,21 @@ FORM f_init.
     TABLES
       p_exclude = lt_exclude.
 
-  DATA functxt TYPE smp_dyntxt.
+  ls_functxt-icon_id = icon_import.
+  ls_functxt-quickinfo = 'Import from file'.
+  ls_functxt-icon_text = 'Import from file'.
+  sscrfields-functxt_05 = ls_functxt.
 
-  functxt-icon_id = icon_import.
-  functxt-quickinfo = 'Import from file'.
-  functxt-icon_text = 'Import from file'.
-  sscrfields-functxt_05 = functxt.
-
-  functxt-icon_id = icon_export.
-  functxt-quickinfo = 'Export to file'.
-  functxt-icon_text = 'Export to file'.
-  sscrfields-functxt_04 = functxt.
+  ls_functxt-icon_id = icon_export.
+  ls_functxt-quickinfo = 'Export to file'.
+  ls_functxt-icon_text = 'Export to file'.
+  sscrfields-functxt_04 = ls_functxt.
 
 
-  functxt-icon_id = icon_system_local_paste.
-  functxt-quickinfo = 'Import from Clipboard'.
-  functxt-icon_text = 'Import from Clipboard'.
-  sscrfields-functxt_03 = functxt.
+  ls_functxt-icon_id = icon_system_local_paste.
+  ls_functxt-quickinfo = 'Import from Clipboard'.
+  ls_functxt-icon_text = 'Import from Clipboard'.
+  sscrfields-functxt_03 = ls_functxt.
 
 *DB table list
   li_list = VALUE #(
@@ -132,9 +132,32 @@ FORM import_file CHANGING import_data_csv TYPE _text_tab.
   DATA:
     lv_filename TYPE string,
     lt_files    TYPE filetable,
-    rc          TYPE i.
+      li_filetable TYPE filetable,
+      lv_rc     TYPE i,
+      lv_action TYPE i.
 
-  lv_filename = zcl_file_utility=>pc_file_open_dialog( ).
+* Open the File Open Dialog
+    cl_gui_frontend_services=>file_open_dialog(
+      CHANGING
+        file_table              = li_filetable
+        rc                      = lv_rc
+        user_action             = lv_action
+      EXCEPTIONS
+        file_open_dialog_failed = 1
+        cntl_error              = 2
+        error_no_gui            = 3
+        not_supported_by_gui    = 4
+        OTHERS                  = 5 ).
+    CASE sy-subrc.
+      WHEN 0.
+        IF lv_action EQ cl_gui_frontend_services=>action_ok.
+          lv_filename = VALUE #( li_filetable[ 1 ] DEFAULT lv_filename ).
+        ENDIF.
+      WHEN OTHERS.
+*         Implement suitable error handling here
+        MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDCASE.
 
   IF lv_filename IS NOT INITIAL.
 
@@ -160,7 +183,7 @@ ENDFORM.
 
 FORM f_call_sm30.
   DATA:
-    import_data_csv TYPE _text_tab.
+  import_data_csv TYPE _text_tab.
 
   DATA(import_table) = CONV tabname( ptable ).
 
@@ -168,9 +191,7 @@ FORM f_call_sm30.
     PERFORM import_file CHANGING import_data_csv.
     DATA(delimiter) = cl_abap_char_utilities=>horizontal_tab.
   ELSE.
-    cl_gui_frontend_services=>clipboard_import(
-      IMPORTING
-        data = import_data_csv ).
+    cl_gui_frontend_services=>clipboard_import( IMPORTING data = import_data_csv ).
     delimiter = cl_abap_char_utilities=>horizontal_tab.
   ENDIF.
 
@@ -196,11 +217,11 @@ FORM f_call_sm30.
   CREATE DATA import_data_table_ref TYPE HANDLE import_data_table.
   ASSIGN import_data_table_ref->* TO <import_data_tab>.
 
-  DATA tab_key TYPE REF TO data.
+  DATA lr_tab_key TYPE REF TO data.
   FIELD-SYMBOLS <fs_tab_key> TYPE any.
 
-  CREATE DATA tab_key TYPE (ptable).
-  ASSIGN tab_key->* TO <fs_tab_key>.
+  CREATE DATA lr_tab_key TYPE (ptable).
+  ASSIGN lr_tab_key->* TO <fs_tab_key>.
 
   LOOP AT import_data_csv INTO DATA(csv_line).
     CLEAR <import_data_line>.
@@ -239,15 +260,15 @@ FORM f_call_sm30.
     TABLES
       data                         = <import_data_tab>
     EXCEPTIONS
-      client_reference             = 1 
-      foreign_lock                 = 2 
-      invalid_action               = 3 
-      no_clientindependent_auth    = 4 
-      no_database_function         = 5 
-      no_show_auth                 = 6 
-      no_tvdir_entry               = 7 
-      no_upd_auth                  = 8 
-      only_show_allowed            = 9 
+      client_reference             = 1
+      foreign_lock                 = 2
+      invalid_action               = 3
+      no_clientindependent_auth    = 4
+      no_database_function         = 5
+      no_show_auth                 = 6
+      no_tvdir_entry               = 7
+      no_upd_auth                  = 8
+      only_show_allowed            = 9
       system_failure               = 10
       unknown_field_in_dba_sellist = 11
       view_not_found               = 12
@@ -267,7 +288,7 @@ FORM f_call_sm30.
 ENDFORM.
 
 FORM f_build_container.
-"eclarations for dynamic data
+  "eclarations for dynamic data
   DATA gt_data TYPE REF TO data.
 
   CLEAR: salv.
@@ -280,28 +301,28 @@ FORM f_build_container.
         cntl_system_error = 2
         OTHERS            = 3 ).
     IF sy-subrc <> 0 AND
-      sy-msgid IS NOT INITIAL AND
-      sy-msgty IS NOT INITIAL.
+       sy-msgid IS NOT INITIAL AND
+       sy-msgty IS NOT INITIAL.
       MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
         WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
     ENDIF.
   ENDIF.
 
-  CHECK ptable IS NOT INITIAL.
+  IF ptable IS NOT INITIAL.
 
-"Create dynamic internal table
+  "Create dynamic internal table
   CREATE DATA gt_data TYPE TABLE OF (ptable).
   ASSIGN gt_data->* TO <ft_tab>.
 
   SELECT SINGLE tabclass
-  FROM dd02l INTO @DATA(lv_tabname)
-  WHERE tabname = @ptable. "AND tabclass = 'TRANSP'.
+    FROM dd02l INTO @DATA(lv_tabname)
+    WHERE tabname = @ptable.
 
   IF lv_tabname = 'VIEW'.
     PERFORM get_data_mv.
   ELSE.
     SELECT *
-      FROM (ptable) INTO TABLE <ft_tab>.
+    FROM (ptable) INTO TABLE <ft_tab>.
   ENDIF.
 
 **********************************************************************
@@ -311,7 +332,7 @@ FORM f_build_container.
   " assign the data reference to a field symbol
   ASSIGN lr_data->* TO FIELD-SYMBOL(<fs_struc1>).
   " Get the list of fields from the database table name
-  DATA(lo_struct_descr1) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data( <fs_struc1>  ) ).
+  DATA(lo_struct_descr1) = CAST cl_abap_structdescr( cl_abap_structdescr=>describe_by_data( <fs_struc1> ) ).
   DATA(lt_fieldlist1) = lo_struct_descr1->get_ddic_field_list( ).
   " Get a list of key fields from the list of all fields
   " Build Range Table for Key Field
@@ -323,7 +344,7 @@ FORM f_build_container.
                          ( low    = CONV fdname( ls_fieldlist1-fieldname ) ) ).
 
 
-" From the list of all components get the key components
+  " From the list of all components get the key components
   DATA(lt_components) = lo_struct_descr1->get_components( ).
   DATA(lt_key_compnents) = lt_components.
 
@@ -340,19 +361,23 @@ FORM f_build_container.
 
       DATA(lo_table_data_struct) = cl_abap_structdescr=>create( lt_components ).
       DATA(lo_table_data_table) = cl_abap_tabledescr=>create( lo_table_data_struct ).
-    CATCH cx_sy_struct_creation.  "
+    CATCH cx_sy_struct_creation.
   ENDTRY.
 
   " build internal table 1 <ft_t1> which has the key field record
   DATA lo_t_data1          TYPE REF TO data.
   CREATE DATA lo_t_data1 TYPE HANDLE lo_table_data_table.
   ASSIGN lo_t_data1->* TO <ft_tab_key>.
-  <ft_tab_key> = <ft_tab>.
+  IF sy-subrc = 0.
+    <ft_tab_key> = <ft_tab>.
+  ENDIF.
 
   FIELD-SYMBOLS: <fs_key_stru> TYPE data.
   DATA lo_data_key TYPE REF TO data.
   CREATE DATA lo_data_key TYPE HANDLE lo_key_fields_struct.
   ASSIGN lo_data_key->* TO <ft_line_key>.
+  IF sy-subrc = 0.
+  ENDIF.
 
 **********************************************************************
 
@@ -365,25 +390,26 @@ FORM f_build_container.
 
   IF salv IS INITIAL.
     TRY.
-"Create Instance
-        CALL METHOD cl_salv_table=>factory
+        "Create Instance
+        cl_salv_table=>factory(
           EXPORTING
             r_container    = doc_container
             container_name = 'CONTAINER'
           IMPORTING
             r_salv_table   = salv
           CHANGING
-            t_table        = <ft_tab>.
+            t_table        = <ft_tab> ).
       CATCH cx_salv_msg.                                "#EC NO_HANDLER
     ENDTRY.
 
     salv->get_display_settings( )->set_list_header( |{ lines( <ft_tab> ) }| & | Records from table | & |{ ptable }| ).
     salv->get_columns( )->set_optimize( abap_true ).
-    salv->get_selections( )->set_selection_mode( if_salv_c_selection_mode=>row_column ). "Allow single row Selection"
+    salv->get_selections( )->set_selection_mode( if_salv_c_selection_mode=>row_column ).
 
-"Display ALV \Output
+    "Display ALV \Output
     salv->display( ).
   ENDIF.
+ENDIF.
 ENDFORM.
 
 FORM get_data_mv.
@@ -412,9 +438,8 @@ ENDFORM.
 
 FORM f_export_to_pc.
   DATA:
-    filename          TYPE string.
+  filename          TYPE string.
 
-*  IF <ft_tab> IS NOT INITIAL.
   PERFORM pickup_path_file CHANGING filename.
   IF filename IS NOT INITIAL.
     filename = filename && '\' && ptable && sy-sysid && sy-datum && '.CSV'.
@@ -422,9 +447,9 @@ FORM f_export_to_pc.
 * Get trailing blank
     cl_gui_frontend_services=>gui_download(
          EXPORTING filename              = filename
-                   filetype     = 'ASC'
+                   filetype              = 'ASC'
                    write_field_separator = 'X'
-         CHANGING  data_tab     = <ft_tab> ).
+         CHANGING  data_tab              = <ft_tab> ).
 
 
   ENDIF.
@@ -432,30 +457,31 @@ ENDFORM.
 
 FORM pickup_path_file CHANGING filepath.
   cl_gui_frontend_services=>directory_browse(
-     EXPORTING window_title    = 'Browse Path to download'
+     EXPORTING window_title   = 'Browse Path to download'
                initial_folder = 'C:\temp1'
      CHANGING selected_folder = filepath ).
 
 ENDFORM.
 
 FORM f_validate_table.
-  IF  ptable IS INITIAL.
+  IF ptable IS INITIAL.
     MESSAGE 'Select table Name to be uploaded.' TYPE 'S'.
   ELSE.
 
-"Upload only Tables in customer namespace
+    "Upload only Tables in customer namespace
     IF ptable+0(1) NE 'Z' AND ptable+0(1) NE 'Y'.
-      MESSAGE 'Only tables in customer namespace can be uploaded.' TYPE 'S'. "'E'.
+      "can be type 'E'.
+      MESSAGE 'Only tables in customer namespace can be uploaded.' TYPE 'S'.
     ENDIF.
 
-"Only transparent tables can be uploaded
+    "Only transparent tables can be uploaded
     SELECT SINGLE tabname
-    FROM dd02l INTO @DATA(lv_tabname)
-    WHERE tabname = @ptable AND
-          tabclass = 'TRANSP' OR
-          tabclass = 'VIEW'.
+      FROM dd02l INTO @DATA(lv_tabname)
+      WHERE tabname = @ptable AND tabclass = 'TRANSP' OR
+    tabclass = 'VIEW'.
     IF sy-subrc NE 0.
-      MESSAGE 'Only transparent tables can be uploaded.' TYPE 'S'. "'E'.
+      "can be type 'E'.
+      MESSAGE 'Only transparent tables can be uploaded.' TYPE 'S'.
     ENDIF.
   ENDIF.
 ENDFORM.
