@@ -3,13 +3,13 @@
 *& Program to mass upload/download data in the database table.
 *&---------------------------------------------------------------------*
 REPORT zsm30massimport.
-TABLES: sscrfields.
+TABLES sscrfields.
 
 CONSTANTS :
   BEGIN OF gc,
     sflight          TYPE rsrd1-tbma_val VALUE 'SFLIGHT',
     sbook            TYPE rsrd1-tbma_val VALUE 'SBOOK',
-*    Z_TMG_table TYPE rsrd1-tbma_val VALUE 'Z_TMG_table',
+    "Z_TMG_table TYPE rsrd1-tbma_val VALUE 'Z_TMG_table',
     import_file      TYPE sscrfields-ucomm VALUE 'FC05',
     import_clipboard TYPE sscrfields-ucomm VALUE 'FC03',
     export_file      TYPE sscrfields-ucomm VALUE 'FC04',
@@ -20,16 +20,16 @@ TYPES: BEGIN OF _text,
        END OF _text,
        _text_tab TYPE STANDARD TABLE OF _text WITH EMPTY KEY.
 
-DATA :
-  doc_container TYPE REF TO cl_gui_docking_container.
 
 FIELD-SYMBOLS:
   <ft_tab_key>  TYPE ANY TABLE,
   <ft_line_key> TYPE data,
   <ft_tab>      TYPE STANDARD TABLE.
 
+DATA :
+  doc_container TYPE REF TO cl_gui_docking_container,
 " Declaration for factory ALV
-DATA: salv TYPE REF TO cl_salv_table.
+  salv TYPE REF TO cl_salv_table.
 
 "Selection Screen
 PARAMETERS: ptable TYPE rsrd1-tbma_val AS LISTBOX VISIBLE LENGTH 40 USER-COMMAND ptab.
@@ -110,7 +110,7 @@ FORM f_init.
   ls_functxt-icon_text = 'Import from Clipboard'.
   sscrfields-functxt_03 = ls_functxt.
 
-*DB table list
+"DB table list
   li_list = VALUE #(
        ( key = gc-sbook text = 'SBOOK:Single Flight Booking' )
        ( key = gc-sflight text = 'SFLIGHT:Flight' ) ).
@@ -136,7 +136,7 @@ FORM import_file CHANGING import_data_csv TYPE _text_tab.
       lv_rc     TYPE i,
       lv_action TYPE i.
 
-* Open the File Open Dialog
+" Open the File Open Dialog
     cl_gui_frontend_services=>file_open_dialog(
       CHANGING
         file_table              = li_filetable
@@ -154,7 +154,7 @@ FORM import_file CHANGING import_data_csv TYPE _text_tab.
           lv_filename = VALUE #( li_filetable[ 1 ] DEFAULT lv_filename ).
         ENDIF.
       WHEN OTHERS.
-*         Implement suitable error handling here
+       "Implement suitable error handling here
         MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
         WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
     ENDCASE.
@@ -165,7 +165,6 @@ FORM import_file CHANGING import_data_csv TYPE _text_tab.
        EXPORTING
          filename        = lv_filename
          filetype        = 'ASC'
-*         has_field_separator     = 'X'
        CHANGING
          data_tab        = import_data_csv
        EXCEPTIONS
@@ -288,7 +287,7 @@ FORM f_call_sm30.
 ENDFORM.
 
 FORM f_build_container.
-  "eclarations for dynamic data
+  "Declarations for dynamic data
   DATA gt_data TYPE REF TO data.
 
   CLEAR: salv.
@@ -438,13 +437,13 @@ ENDFORM.
 
 FORM f_export_to_pc.
   DATA:
-  filename          TYPE string.
+    filename TYPE string.
 
   PERFORM pickup_path_file CHANGING filename.
   IF filename IS NOT INITIAL.
     filename = filename && '\' && ptable && sy-sysid && sy-datum && '.CSV'.
 
-* Get trailing blank
+"Get trailing blank
     cl_gui_frontend_services=>gui_download(
          EXPORTING filename              = filename
                    filetype              = 'ASC'
